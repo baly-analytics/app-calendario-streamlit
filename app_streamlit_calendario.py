@@ -6,7 +6,9 @@ import plotly.figure_factory as ff
 import matplotlib.pyplot as plt
 from streamlit_calendar import calendar
 
-# ========= VISUAL CONFIG =========
+# =========================== #
+#   1. CONFIGURAÇÕES GERAIS   #
+# =========================== #
 BG_COLOR = "#21222c"
 FG_COLOR = "#FFFFFF"
 ACCENT_COLOR = "#FFC107"
@@ -17,20 +19,27 @@ PALETTE_POOL = [
     "#607D8B", "#673AB7"
 ]
 
-# ========= LOAD DATA =========
+# =========================================== #
+#   2. LEITURA E PRÉ-PROCESSAMENTO DOS DADOS  #
+# =========================================== #
 sheet_url = "https://docs.google.com/spreadsheets/d/1D2izOqMKEgSphr7HkdJ34L3Ps3X3R2JIGlHpWX2qqyo/export?format=csv&gid=1348048761"
 df = pd.read_csv(sheet_url)
 df.columns = df.columns.str.strip()
-
 df["Data Início"] = pd.to_datetime(df["Data Início"], dayfirst=True, errors="coerce")
-df["Data Fim"] = pd.to_datetime(df["Data Fim"], dayfirst=True, errors="coerce")
+df["Data Fim"]   = pd.to_datetime(df["Data Fim"], dayfirst=True, errors="coerce")
 df = df.dropna(subset=["Data Início", "Data Fim"])
 
 responsaveis_unicos = df["Nome"].unique().tolist()
 paleta_dinamica = {nome: PALETTE_POOL[i % len(PALETTE_POOL)] for i, nome in enumerate(responsaveis_unicos)}
 
-# ========= FUNÇÕES AUXILIARES =========
+# ======================================= #
+#   3. FUNÇÕES AUXILIARES E FORMATAÇÃO    #
+# ======================================= #
 def eventos_from_df(df):
+    """
+    Converte linhas do DataFrame em dicionários no formato esperado pelo streamlit-calendar,
+    ajustando 'end' para ser EXCLUSIVO (com +1 dia) conforme padrão FullCalendar.
+    """
     eventos = []
     for _, row in df.iterrows():
         if pd.isna(row["Data Início"]) or pd.isna(row["Data Fim"]):
@@ -38,12 +47,15 @@ def eventos_from_df(df):
         eventos.append({
             "title": f"{row['Nome']} – {row['Motivo']} ({row['Destino']})",
             "start": row["Data Início"].strftime("%Y-%m-%d"),
-            "end": (row["Data Fim"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+            "end":   (row["Data Fim"] + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), # end exclusivo
             "color": paleta_dinamica.get(row["Nome"], ACCENT_COLOR)
         })
     return eventos
 
 def kpi_card(label, value, color):
+    """
+    Renderiza um KPI card customizado via HTML embutido.
+    """
     st.markdown(
         f"""
         <div style='background:{color};padding:18px 14px 10px 14px;
@@ -56,51 +68,54 @@ def kpi_card(label, value, color):
         unsafe_allow_html=True
     )
 
-# ========= APP =========
+def formatar_data_evento(data_iso, corrigir_fim=False):
+    """
+    Formata data no padrão dd/mm/yy e corrige a data final (+1 dia do calendário)
+    para apresentação ao usuário.
+    """
+    if not data_iso:
+        return "—"
+    try:
+        dt = pd.to_datetime(data_iso)
+        if corrigir_fim:
+            dt = dt - pd.Timedelta(days=1)
+        return dt.strftime("%d/%m/%y")
+    except Exception:
+        return data_iso
+
+# ================================ #
+#   4. LAYOUT E FILTROS INTERATIVOS #
+# ================================ #
 st.set_page_config("Calendário Executivo", layout="wide")
 st.title("📅 Calendário Executivo – Viagens e Atividades do Time")
 
-
-# === FILTROS (SELECIONAR TODOS) ===
+# ---- Filtros principais (colunas para seleção dinâmica) ----
 c1, c2, c3, c4, c5 = st.columns(5)
-
 with c1:
-    nomes = df["Nome"].unique().tolist()
-    all_nomes = st.checkbox("Selecionar todos (Responsável)", True)
-    nomes_sel = st.multiselect(
-        "Responsável", nomes, default=nomes if all_nomes else []
-    )
-
+    nomes      = df["Nome"].unique().tolist()
+    all_nomes  = st.checkbox("Selecionar todos (Responsável)", True)
+    nomes_sel  = st.multiselect("Responsável", nomes, default=nomes if all_nomes else [])
 with c2:
-    tipos = df["Tipo Roteiro"].unique().tolist()
-    all_tipos = st.checkbox("Selecionar todos (Tipo)", True)
-    tipos_sel = st.multiselect(
-        "Tipo de Roteiro", tipos, default=tipos if all_tipos else []
-    )
-
+    tipos      = df["Tipo Roteiro"].unique().tolist()
+    all_tipos  = st.checkbox("Selecionar todos (Tipo)", True)
+    tipos_sel  = st.multiselect("Tipo de Roteiro", tipos, default=tipos if all_tipos else [])
 with c3:
-    status = df["Status Viagem"].unique().tolist()
+    status     = df["Status Viagem"].unique().tolist()
     all_status = st.checkbox("Selecionar todos (Status Viagem)", True)
-    status_sel = st.multiselect(
-        "Status Viagem", status, default=status if all_status else []
-    )
-
+    status_sel = st.multiselect("Status Viagem", status, default=status if all_status else [])
 with c4:
-    classes = df["Classe"].unique().tolist()
+    classes     = df["Classe"].unique().tolist()
     all_classes = st.checkbox("Selecionar todos (Classe)", True)
-    classes_sel = st.multiselect(
-        "Classe", classes, default=classes if all_classes else []
-    )
-
+    classes_sel = st.multiselect("Classe", classes, default=classes if all_classes else [])
 with c5:
-    meses = sorted(df["Data Início"].dt.month.unique())
+    meses     = sorted(df["Data Início"].dt.month.unique())
     all_meses = st.checkbox("Selecionar todos (Mês)", True)
     meses_sel = st.multiselect(
         "Mês", meses, default=meses if all_meses else [],
         format_func=lambda m: pd.to_datetime(str(m), format="%m").strftime("%B")
     )
 
-# === DATAFRAME FILTRADO ===
+# ---- Filtra o DataFrame conforme seleção ----
 df_f = df[
     df["Nome"].isin(nomes_sel) &
     df["Tipo Roteiro"].isin(tipos_sel) &
@@ -108,41 +123,63 @@ df_f = df[
     df["Classe"].isin(classes_sel) &
     df["Data Início"].dt.month.isin(meses_sel)
 ].copy()
-
 eventos_f = [e for e in eventos_from_df(df_f) if any(n in e["title"] for n in nomes_sel)]
 
-
-# ========= KPI CARDS (NO TOPO) =========
+# ======================== #
+#   5. KPIs (HEADERS)      #
+# ======================== #
 colk1, colk2, colk3, colk4 = st.columns(4)
 with colk1:
     kpi_card("Total Compromissos", len(df_f), "#FFC107")
-
 with colk2:
     dias = (df_f["Data Fim"] - df_f["Data Início"]).dt.days.add(1)
     media = dias.mean() if not dias.empty else 0
     kpi_card("Duração Média da Viagem (dias)", f"{media:.1f}", "#8BC34A")
-
 with colk3:
     pessoas = df_f["Nome"].nunique()
     kpi_card("Pessoas em viagem", pessoas, "#00BCD4")
-
 with colk4:
     ufs = df_f["Destino UF"].nunique() if "Destino UF" in df_f.columns else 0
     kpi_card("UFs Visitadas", ufs, "#FF5722")
 
-    
-
-# ========= TABELA =========
+# ======================== #
+#   6. TABELA PRINCIPAL    #
+# ======================== #
 st.subheader("📋 Tabela detalhada")
 gb = GridOptionsBuilder.from_dataframe(df_f)
 gb.configure_default_column(filterable=True, sortable=True)
 AgGrid(df_f, gridOptions=gb.build(), height=320)
 
-# ========= VISUALIZAÇÃO CALENDÁRIO =========
+# ============================================= #
+#   7. CALENDÁRIO + BARRA LATERAL DE DETALHES   #
+# ============================================= #
 st.subheader("📆 Visualização do Calendário")
 modo = st.radio("Escolha o modo:", ["Modelo Google Agenda", "Gantt Plotly"], horizontal=True)
+
+# --- Bloco de detalhes do evento na sidebar ---
+event_return = st.session_state.get("calendar_event_ret", None)
+evento = None
+if event_return and event_return.get("callback") == "eventClick":
+    evento = event_return["eventClick"]["event"]
+
+if evento:
+    with st.sidebar:
+        st.markdown(
+            f"""
+            <div style="background:#FFC107;padding:14px;border-radius:12px;color:#222;font-weight:bold;margin-bottom:12px;">
+            📌 Evento selecionado: {evento.get('title', '')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        with st.expander("📝 Detalhes do Evento Selecionado", expanded=True):
+            st.markdown(f"**Título:** {evento.get('title', '')}")
+            st.markdown(f"**Início:** {formatar_data_evento(evento.get('start', ''))}")
+            st.markdown(f"**Fim:** {formatar_data_evento(evento.get('end', ''), corrigir_fim=True)}")
+
+# --- Renderização do calendário principal ---
 if modo == "Modelo Google Agenda":
-    calendar(
+    calendar_ret = calendar(
         events=eventos_f,
         options={
             "initialView": "dayGridMonth",
@@ -156,7 +193,11 @@ if modo == "Modelo Google Agenda":
         },
         key="calendar"
     )
+    # Salva o callback do evento clicado na sessão
+    if calendar_ret is not None:
+        st.session_state["calendar_event_ret"] = calendar_ret
 else:
+    # Gráfico de Gantt agrupado por motivo/responsável (plotly)
     st.caption("Gantt agrupado por Motivo, colorido por Responsável (hover para detalhes)")
     if not df_f.empty:
         gantt_df = df_f.rename(
@@ -179,7 +220,9 @@ else:
     else:
         st.info("Nenhum evento encontrado para os filtros selecionados.")
 
-# ========= DASHBOARDS EXECUTIVOS =========
+# ===================================== #
+#   8. DASHBOARDS EXECUTIVOS (GRÁFICOS) #
+# ===================================== #
 st.markdown("---")
 st.header("📊 Dashboards Executivos")
 
@@ -195,7 +238,7 @@ plt.rcParams.update({
 
 d1, d2 = st.columns(2)
 
-# Gráfico Viagens por Responsável
+# --- Gráfico Viagens por Responsável ---
 with d1:
     st.subheader("Viagens por Responsável")
     nomes_grafico = df_f["Nome"].value_counts().sort_values(ascending=False)
@@ -204,12 +247,12 @@ with d1:
     nomes_grafico.plot(kind="bar", color=cores, ax=ax1)
     ax1.set_ylabel("Qtd")
     ax1.set_xlabel("Responsável")
-    ax1.bar_label(ax1.containers[0], label_type='edge')  # Adiciona os labels nas barras
+    ax1.bar_label(ax1.containers[0], label_type='edge')
     plt.xticks(rotation=20)
     st.pyplot(fig1)
     plt.close(fig1)
 
-# Gráfico Principais Tipos de Viagem (Classe)
+# --- Gráfico Principais Tipos de Viagem (Classe) ---
 with d2:
     st.subheader("Principais tipos de viagem")
     classe_grafico = df_f["Classe"].value_counts().head(8).sort_values(ascending=True)
@@ -224,20 +267,14 @@ with d2:
     st.pyplot(fig2)
     plt.close(fig2)
 
-# Adicione novas colunas para os gráficos extras
+# --- Gráficos extras: Ranking UFs e Destinos ---
 d3, d4 = st.columns(2)
-
-# Gráfico Ranking de UFs Visitadas
 with d3:
     if "Destino UF" in df_f.columns:
         st.subheader("🌎 Ranking de UFs Visitadas")
         top_ufs = df_f["Destino UF"].value_counts().sort_values(ascending=False).head(8)
-        fig_uf, ax_uf = plt.subplots(figsize=(5, 3))  # Mantém tamanho igual
-        bars = top_ufs.plot(
-            kind="barh",
-            color="#00BCD4",
-            ax=ax_uf
-        )
+        fig_uf, ax_uf = plt.subplots(figsize=(5, 3))
+        bars = top_ufs.plot(kind="barh", color="#00BCD4", ax=ax_uf)
         ax_uf.set_xlabel("Qtd", fontsize=10)
         ax_uf.set_ylabel("Destino UF", fontsize=10)
         ax_uf.tick_params(axis='x', labelsize=10)
@@ -246,16 +283,12 @@ with d3:
         for i, v in enumerate(top_ufs.values):
             ax_uf.text(
                 v + 0.1, i, str(v),
-                va='center',
-                color=FG_COLOR,
-                fontsize=12,
-                fontweight='bold'
+                va='center', color=FG_COLOR,
+                fontsize=12, fontweight='bold'
             )
         fig_uf.tight_layout()
         st.pyplot(fig_uf)
         plt.close(fig_uf)
-
-# Gráfico Ranking de Destinos
 with d4:
     if "Destino" in df_f.columns:
         st.subheader("🏙️ Ranking de Destinos Visitados")
@@ -267,11 +300,7 @@ with d4:
         ]
         cores_dest = [PALETTE_DEST[i % len(PALETTE_DEST)] for i in range(len(destinos))]
         fig_dest, ax_dest = plt.subplots(figsize=(5, 3))
-        bars = top_destinos.plot(
-            kind="barh",
-            color=cores_dest,
-            ax=ax_dest
-        )
+        bars = top_destinos.plot(kind="barh", color=cores_dest, ax=ax_dest)
         ax_dest.set_xlabel("Qtd", fontsize=10)
         ax_dest.set_ylabel("Destino", fontsize=10)
         ax_dest.tick_params(axis='x', labelsize=10)
@@ -280,10 +309,8 @@ with d4:
         for i, (v, c) in enumerate(zip(top_destinos.values, cores_dest)):
             ax_dest.text(
                 v + 0.1, i, str(v),
-                va='center',
-                color=c,
-                fontsize=12,
-                fontweight='bold'
+                va='center', color=c,
+                fontsize=12, fontweight='bold'
             )
         fig_dest.tight_layout()
         st.pyplot(fig_dest)
