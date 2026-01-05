@@ -156,28 +156,8 @@ AgGrid(df_f, gridOptions=gb.build(), height=320)
 st.subheader("📆 Visualização do Calendário")
 modo = st.radio("Escolha o modo:", ["Modelo Google Agenda", "Gantt Plotly"], horizontal=True)
 
-# --- Bloco de detalhes do evento na sidebar ---
-event_return = st.session_state.get("calendar_event_ret", None)
-evento = None
-if event_return and event_return.get("callback") == "eventClick":
-    evento = event_return["eventClick"]["event"]
-
-if evento:
-    with st.sidebar:
-        st.markdown(
-            f"""
-            <div style="background:#FFC107;padding:14px;border-radius:12px;color:#222;font-weight:bold;margin-bottom:12px;">
-            📌 Evento selecionado: {evento.get('title', '')}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        with st.expander("📝 Detalhes do Evento Selecionado", expanded=True):
-            st.markdown(f"**Título:** {evento.get('title', '')}")
-            st.markdown(f"**Início:** {formatar_data_evento(evento.get('start', ''))}")
-            st.markdown(f"**Fim:** {formatar_data_evento(evento.get('end', ''), corrigir_fim=True)}")
-
-# --- Renderização do calendário principal ---
+# --- (1) Renderização do calendário ANTES ---
+calendar_ret = None
 if modo == "Modelo Google Agenda":
     calendar_ret = calendar(
         events=eventos_f,
@@ -197,7 +177,6 @@ if modo == "Modelo Google Agenda":
     if calendar_ret is not None:
         st.session_state["calendar_event_ret"] = calendar_ret
 else:
-    # Gráfico de Gantt agrupado por motivo/responsável (plotly)
     st.caption("Gantt agrupado por Motivo, colorido por Responsável (hover para detalhes)")
     if not df_f.empty:
         gantt_df = df_f.rename(
@@ -219,6 +198,27 @@ else:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Nenhum evento encontrado para os filtros selecionados.")
+
+# --- (2) Agora, pega o evento do session_state e mostra na sidebar ---
+event_return = st.session_state.get("calendar_event_ret", None)
+evento = None
+if event_return and event_return.get("callback") == "eventClick":
+    evento = event_return["eventClick"]["event"]
+
+if evento:
+    with st.sidebar:
+        st.markdown(
+            f"""
+            <div style="background:#FFC107;padding:14px;border-radius:12px;color:#222;font-weight:bold;margin-bottom:12px;">
+            📌 Evento selecionado: {evento.get('title', '')}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        with st.expander("📝 Detalhes do Evento Selecionado", expanded=True):
+            st.markdown(f"**Título:** {evento.get('title', '')}")
+            st.markdown(f"**Início:** {formatar_data_evento(evento.get('start', ''))}")
+            st.markdown(f"**Fim:** {formatar_data_evento(evento.get('end', ''), corrigir_fim=True)}")
 
 # ===================================== #
 #   8. DASHBOARDS EXECUTIVOS (GRÁFICOS) #
